@@ -964,6 +964,11 @@ inline int mlx5_poll_one_ex(struct mlx5_cq *cq,
 	wc_ex->wc_flags = 0;
 	wc_ex->reserved = 0;
 
+	if (wc_flags & IBV_WC_EX_WITH_COMPLETION_TIMESTAMP) {
+		*wc_buffer.b64++ = ntohll(cqe64->timestamp);
+		wc_ex->wc_flags |= IBV_WC_EX_WITH_COMPLETION_TIMESTAMP;
+	}
+
 	switch (opcode) {
 	case MLX5_CQE_REQ:
 		err = mlx5_poll_one_cqe_req(cq, cur_rsc, cqe, qpn, cqe_ver,
