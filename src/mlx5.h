@@ -627,6 +627,8 @@ int mlx5_dereg_mr(struct ibv_mr *mr);
 struct ibv_cq *mlx5_create_cq(struct ibv_context *context, int cqe,
 			       struct ibv_comp_channel *channel,
 			       int comp_vector);
+struct ibv_cq *mlx5_create_cq_ex(struct ibv_context *context,
+				 struct ibv_cq_init_attr_ex *cq_attr);
 int mlx5_poll_cq_ex(struct ibv_cq *ibcq, struct ibv_wc_ex *wc,
 		    struct ibv_poll_cq_ex_attr *attr);
 int mlx5_poll_cq_v1_ex(struct ibv_cq *ibcq, struct ibv_wc_ex *wc,
