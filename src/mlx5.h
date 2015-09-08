@@ -366,6 +366,11 @@ enum {
 
 struct mlx5_cq {
 	struct ibv_cq			ibv_cq;
+	uint64_t			wc_flags;
+	int (*poll_one)(struct mlx5_cq *cq, struct mlx5_resource **cur_rsc,
+			struct mlx5_srq **cur_srq,
+			struct ibv_wc_ex **pwc_ex, uint64_t wc_flags,
+			int cqe_ver);
 	struct mlx5_buf			buf_a;
 	struct mlx5_buf			buf_b;
 	struct mlx5_buf		       *active_buf;
@@ -622,6 +627,15 @@ int mlx5_dereg_mr(struct ibv_mr *mr);
 struct ibv_cq *mlx5_create_cq(struct ibv_context *context, int cqe,
 			       struct ibv_comp_channel *channel,
 			       int comp_vector);
+int mlx5_poll_cq_ex(struct ibv_cq *ibcq, struct ibv_wc_ex *wc,
+		    struct ibv_poll_cq_ex_attr *attr);
+int mlx5_poll_cq_v1_ex(struct ibv_cq *ibcq, struct ibv_wc_ex *wc,
+		       struct ibv_poll_cq_ex_attr *attr);
+int mlx5_poll_one_ex(struct mlx5_cq *cq,
+		     struct mlx5_resource **cur_rsc,
+		     struct mlx5_srq **cur_srq,
+		     struct ibv_wc_ex **pwc_ex, uint64_t wc_flags,
+		     int cqe_ver);
 int mlx5_alloc_cq_buf(struct mlx5_context *mctx, struct mlx5_cq *cq,
 		      struct mlx5_buf *buf, int nent, int cqe_sz);
 int mlx5_free_cq_buf(struct mlx5_context *ctx, struct mlx5_buf *buf);
