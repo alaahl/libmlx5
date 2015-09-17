@@ -287,11 +287,6 @@ static int qp_sig_enabled(void)
 }
 
 enum {
-	CREATE_CQ_SUPPORTED_WC_FLAGS = IBV_WC_STANDARD_FLAGS	|
-				       IBV_WC_EX_WITH_COMPLETION_TIMESTAMP
-};
-
-enum {
 	CREATE_CQ_SUPPORTED_COMP_MASK = IBV_CQ_INIT_ATTR_FLAGS
 };
 
@@ -409,7 +404,9 @@ static struct ibv_cq *create_cq(struct ibv_context *context,
 	cq->stall_cycles = to_mctx(context)->stall_cycles;
 
 	cq->wc_flags = cq_attr->wc_flags;
-	cq->poll_one = mlx5_poll_one_ex;
+	cq->poll_one = mlx5_get_poll_one_fn(cq->wc_flags);
+	if (!cq->poll_one)
+		cq->poll_one = mlx5_poll_one_ex;
 
 	return &cq->ibv_cq;
 

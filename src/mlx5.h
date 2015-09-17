@@ -109,6 +109,10 @@
 
 #define PFX		"mlx5: "
 
+enum {
+	CREATE_CQ_SUPPORTED_WC_FLAGS = IBV_WC_STANDARD_FLAGS	|
+				       IBV_WC_EX_WITH_COMPLETION_TIMESTAMP
+};
 
 enum {
 	MLX5_IB_MMAP_CMD_SHIFT	= 8,
@@ -646,6 +650,12 @@ int mlx5_poll_one_ex(struct mlx5_cq *cq,
 		     struct mlx5_srq **cur_srq,
 		     struct ibv_wc_ex **pwc_ex, uint64_t wc_flags,
 		     int cqe_ver);
+int (*mlx5_get_poll_one_fn(uint64_t wc_flags))(struct mlx5_cq *cq,
+					       struct mlx5_resource **cur_rsc,
+					       struct mlx5_srq **cur_srq,
+					       struct ibv_wc_ex **pwc_ex,
+					       uint64_t wc_flags,
+					       int cqe_ver);
 int mlx5_alloc_cq_buf(struct mlx5_context *mctx, struct mlx5_cq *cq,
 		      struct mlx5_buf *buf, int nent, int cqe_sz);
 int mlx5_free_cq_buf(struct mlx5_context *ctx, struct mlx5_buf *buf);
