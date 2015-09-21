@@ -4,6 +4,7 @@ AC_PREREQ(2.57)
 AC_INIT(libmlx5, 1.0.2, linux-rdma@vger.kernel.org)
 AC_CONFIG_SRCDIR([src/mlx5.h])
 AC_CONFIG_AUX_DIR(config)
+AC_CONFIG_MACRO_DIR([m4])
 AC_CONFIG_HEADER(config.h)
 AM_INIT_AUTOMAKE([foreign])
 m4_ifdef([AM_SILENT_RULES], [AM_SILENT_RULES([yes])])
@@ -64,6 +65,8 @@ AC_CHECK_FUNC(verbs_register_driver, [],
 AC_CHECK_FUNC(ibv_read_sysfs_file, [],
     AC_MSG_ERROR([ibv_read_sysfs_file() not found.  libmlx5 requires libibverbs >= 1.0.3.]))
 AC_CHECK_FUNCS(ibv_dontfork_range ibv_dofork_range ibv_register_driver)
+
+AX_GCC_FUNC_ATTRIBUTE([always_inline])
 
 dnl Now check if for libibverbs 1.0 vs 1.1
 dummy=if$$

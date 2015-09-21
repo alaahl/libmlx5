@@ -237,6 +237,14 @@ static inline void handle_good_req_ex(struct ibv_wc_ex *wc_ex,
 				      uint64_t wc_flags_yes,
 				      uint64_t wc_flags_no,
 				      uint32_t qpn, uint64_t *wc_flags_out)
+	ALWAYS_INLINE;
+static inline void handle_good_req_ex(struct ibv_wc_ex *wc_ex,
+				      union wc_buffer *pwc_buffer,
+				      struct mlx5_cqe64 *cqe,
+				      uint64_t wc_flags,
+				      uint64_t wc_flags_yes,
+				      uint64_t wc_flags_no,
+				      uint32_t qpn, uint64_t *wc_flags_out)
 {
 	union wc_buffer wc_buffer = *pwc_buffer;
 
@@ -385,6 +393,14 @@ static int handle_responder(struct ibv_wc *wc, struct mlx5_cqe64 *cqe,
 	return IBV_WC_SUCCESS;
 }
 
+static inline int handle_responder_ex(struct ibv_wc_ex *wc_ex,
+				      union wc_buffer *pwc_buffer,
+				      struct mlx5_cqe64 *cqe,
+				      struct mlx5_qp *qp, struct mlx5_srq *srq,
+				      uint64_t wc_flags, uint64_t wc_flags_yes,
+				      uint64_t wc_flags_no, uint32_t qpn,
+				      uint64_t *wc_flags_out)
+	ALWAYS_INLINE;
 static inline int handle_responder_ex(struct ibv_wc_ex *wc_ex,
 				      union wc_buffer *pwc_buffer,
 				      struct mlx5_cqe64 *cqe,
@@ -604,7 +620,7 @@ static void mlx5_get_cycles(uint64_t *cycles)
 static inline struct mlx5_qp *get_req_context(struct mlx5_context *mctx,
 					      struct mlx5_resource **cur_rsc,
 					      uint32_t rsn, int cqe_ver)
-					      __attribute__((always_inline));
+					      ALWAYS_INLINE;
 static inline struct mlx5_qp *get_req_context(struct mlx5_context *mctx,
 					      struct mlx5_resource **cur_rsc,
 					      uint32_t rsn, int cqe_ver)
@@ -620,7 +636,7 @@ static inline int get_resp_ctx_v1(struct mlx5_context *mctx,
 				  struct mlx5_resource **cur_rsc,
 				  struct mlx5_srq **cur_srq,
 				  uint32_t uidx, uint8_t *is_srq)
-				  __attribute__((always_inline));
+				  ALWAYS_INLINE;
 static inline int get_resp_ctx_v1(struct mlx5_context *mctx,
 				  struct mlx5_resource **cur_rsc,
 				  struct mlx5_srq **cur_srq,
@@ -656,7 +672,7 @@ static inline int get_resp_ctx_v1(struct mlx5_context *mctx,
 static inline int get_qp_ctx(struct mlx5_context *mctx,
 			     struct mlx5_resource **cur_rsc,
 			     uint32_t qpn)
-			       __attribute__((always_inline));
+			       ALWAYS_INLINE;
 static inline int get_qp_ctx(struct mlx5_context *mctx,
 			     struct mlx5_resource **cur_rsc,
 			     uint32_t qpn)
@@ -678,7 +694,7 @@ static inline int get_qp_ctx(struct mlx5_context *mctx,
 static inline int get_srq_ctx(struct mlx5_context *mctx,
 			      struct mlx5_srq **cur_srq,
 			      uint32_t srqn_uidx)
-			      __attribute__((always_inline));
+			      ALWAYS_INLINE;
 static inline int get_srq_ctx(struct mlx5_context *mctx,
 			      struct mlx5_srq **cur_srq,
 			      uint32_t srqn)
@@ -719,7 +735,7 @@ static inline int get_cur_rsc(struct mlx5_context *mctx,
 }
 
 static inline void dump_cqe_debug(FILE *fp, struct mlx5_cq *cq,
-				  struct mlx5_cqe64 *cqe64) __attribute__((always_inline));
+				  struct mlx5_cqe64 *cqe64) ALWAYS_INLINE;
 static inline void dump_cqe_debug(FILE *fp, struct mlx5_cq *cq,
 				  struct mlx5_cqe64 *cqe64)
 {
@@ -734,7 +750,7 @@ static inline void dump_cqe_debug(FILE *fp, struct mlx5_cq *cq,
 inline int mlx5_poll_one_cqe_req(struct mlx5_cq *cq,
 				 struct mlx5_resource **cur_rsc,
 				 void *cqe, uint32_t qpn, int cqe_ver,
-				 uint64_t *wr_id) __attribute__((always_inline));
+				 uint64_t *wr_id) ALWAYS_INLINE;
 inline int mlx5_poll_one_cqe_req(struct mlx5_cq *cq,
 				 struct mlx5_resource **cur_rsc,
 				 void *cqe, uint32_t qpn, int cqe_ver,
@@ -777,7 +793,7 @@ inline int mlx5_poll_one_cqe_resp(struct mlx5_context *mctx,
 				  struct mlx5_srq **cur_srq,
 				  struct mlx5_cqe64 *cqe64, int cqe_ver,
 				  uint32_t qpn, uint8_t *is_srq)
-	__attribute__((always_inline));
+	ALWAYS_INLINE;
 inline int mlx5_poll_one_cqe_resp(struct mlx5_context *mctx,
 				  struct mlx5_resource **cur_rsc,
 				  struct mlx5_srq **cur_srq,
@@ -808,7 +824,7 @@ inline int mlx5_poll_one_cqe_err(struct mlx5_context *mctx,
 				 uint32_t qpn, uint32_t *pwc_status,
 				 uint32_t *pwc_vendor_err,
 				 uint64_t *pwc_wr_id, uint8_t opcode)
-	__attribute__((always_inline));
+	ALWAYS_INLINE;
 inline int mlx5_poll_one_cqe_err(struct mlx5_context *mctx,
 				 struct mlx5_resource **cur_rsc,
 				 struct mlx5_srq **cur_srq,
@@ -884,7 +900,7 @@ static inline int mlx5_poll_one(struct mlx5_cq *cq,
 			 struct mlx5_resource **cur_rsc,
 			 struct mlx5_srq **cur_srq,
 			 struct ibv_wc *wc, int cqe_ver)
-			 __attribute__((always_inline));
+			 ALWAYS_INLINE;
 static inline int mlx5_poll_one(struct mlx5_cq *cq,
 			 struct mlx5_resource **cur_rsc,
 			 struct mlx5_srq **cur_srq,
@@ -966,7 +982,7 @@ static inline int _mlx5_poll_one_ex(struct mlx5_cq *cq,
 				    uint64_t wc_flags,
 				    uint64_t wc_flags_yes, uint64_t wc_flags_no,
 				    int cqe_ver)
-	__attribute__((always_inline));
+	ALWAYS_INLINE;
 static inline int _mlx5_poll_one_ex(struct mlx5_cq *cq,
 				    struct mlx5_resource **cur_rsc,
 				    struct mlx5_srq **cur_srq,
@@ -1271,7 +1287,7 @@ int (*mlx5_get_poll_one_fn(uint64_t wc_flags))(struct mlx5_cq *cq,
 }
 
 static inline void mlx5_poll_cq_stall_start(struct mlx5_cq *cq)
-__attribute__((always_inline));
+ALWAYS_INLINE;
 static inline void mlx5_poll_cq_stall_start(struct mlx5_cq *cq)
 {
 	if (cq->stall_enable) {
@@ -1286,7 +1302,7 @@ static inline void mlx5_poll_cq_stall_start(struct mlx5_cq *cq)
 }
 
 static inline void mlx5_poll_cq_stall_end(struct mlx5_cq *cq, int ne,
-					  int npolled, int err) __attribute__((always_inline));
+					  int npolled, int err) ALWAYS_INLINE;
 static inline void mlx5_poll_cq_stall_end(struct mlx5_cq *cq, int ne,
 					  int npolled, int err)
 {
@@ -1313,7 +1329,7 @@ static inline void mlx5_poll_cq_stall_end(struct mlx5_cq *cq, int ne,
 
 static inline int poll_cq(struct ibv_cq *ibcq, int ne,
 			  struct ibv_wc *wc, int cqe_ver)
-	__attribute__((always_inline));
+	ALWAYS_INLINE;
 static inline int poll_cq(struct ibv_cq *ibcq, int ne,
 			  struct ibv_wc *wc, int cqe_ver)
 {
