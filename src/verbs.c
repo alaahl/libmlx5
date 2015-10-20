@@ -914,16 +914,100 @@ static void mlx5_free_qp_buf(struct mlx5_qp *qp)
 		free(qp->sq.wrid);
 }
 
-struct ibv_qp *create_qp(struct ibv_context *context,
-			 struct ibv_qp_init_attr_ex *attr)
+static int init_attr_v2(struct ibv_context *context, struct mlx5_qp *qp,
+			struct ibv_qp_init_attr_ex *attr, uint32_t *uuar_index,
+			uint32_t usr_idx)
+{
+	struct mlx5_create_qp_ex	cmd;
+	struct mlx5_create_qp_resp_ex	resp;
+	int err;
+
+	memset(&cmd, 0, sizeof(cmd));
+	memset(&resp, 0, sizeof(resp));
+	if (qp->wq_sig)
+		cmd.flags |= MLX5_QP_FLAG_SIGNATURE;
+
+	if (use_scatter_to_cqe())
+		cmd.flags |= MLX5_QP_FLAG_SCATTER_CQE;
+
+	cmd.buf_addr = (uintptr_t) qp->buf.buf;
+	cmd.db_addr  = (uintptr_t) qp->db;
+	cmd.sq_wqe_count = qp->sq.wqe_cnt;
+	cmd.rq_wqe_count = qp->rq.wqe_cnt;
+	cmd.rq_wqe_shift = qp->rq.wqe_shift;
+	cmd.uidx = usr_idx;
+	err = ibv_cmd_create_qp_ex2(context, &qp->verbs_qp, sizeof(qp->verbs_qp),
+				    attr, &cmd.ibv_cmd, sizeof(cmd.ibv_cmd), sizeof(cmd),
+				    &resp.ibv_resp, sizeof(resp.ibv_resp), sizeof(resp));
+	if (!err)
+		*uuar_index = resp.uuar_index;
+
+	return err;
+}
+
+static int init_attr_v1(struct ibv_context *context, struct mlx5_qp *qp,
+			struct ibv_qp_init_attr_ex *attr, uint32_t *uuar_index,
+			uint32_t usr_idx)
 {
 	struct mlx5_create_qp		cmd;
 	struct mlx5_create_qp_resp	resp;
+
+	int err;
+
+	memset(&cmd, 0, sizeof(cmd));
+	memset(&resp, 0, sizeof(resp));
+	if (qp->wq_sig)
+		cmd.flags |= MLX5_QP_FLAG_SIGNATURE;
+
+	if (use_scatter_to_cqe())
+		cmd.flags |= MLX5_QP_FLAG_SCATTER_CQE;
+
+	cmd.buf_addr = (uintptr_t) qp->buf.buf;
+	cmd.sq_buf_addr = (attr->qp_type == IBV_QPT_RAW_PACKET) ?
+			  (uintptr_t) qp->sq_buf.buf : 0;
+	cmd.db_addr  = (uintptr_t) qp->db;
+	cmd.sq_wqe_count = qp->sq.wqe_cnt;
+	cmd.rq_wqe_count = qp->rq.wqe_cnt;
+	cmd.rq_wqe_shift = qp->rq.wqe_shift;
+	cmd.uidx = usr_idx;
+
+	err = ibv_cmd_create_qp_ex(context, &qp->verbs_qp, sizeof(qp->verbs_qp),
+				   attr, &cmd.ibv_cmd, sizeof(cmd),
+				   &resp.ibv_resp, sizeof(resp));
+	if (!err)
+		*uuar_index = resp.uuar_index;
+
+	return err;
+}
+
+static int is_v2_qp(struct ibv_qp_init_attr_ex *attr)
+{
+	if (attr->comp_mask >= IBV_QP_INIT_ATTR_CREATE_FLAGS)
+		return 1;
+
+	return 0;
+}
+
+static int qp_cmd(struct ibv_context *context, struct mlx5_qp *qp,
+		  struct ibv_qp_init_attr_ex *attr, uint32_t *uuar_index,
+		  uint32_t usr_idx)
+{
+	if (is_v2_qp(attr))
+		return init_attr_v2(context, qp, attr, uuar_index, usr_idx);
+	else
+		return init_attr_v1(context, qp, attr, uuar_index, usr_idx);
+
+}
+
+struct ibv_qp *create_qp(struct ibv_context *context,
+			 struct ibv_qp_init_attr_ex *attr)
+{
 	struct mlx5_qp		       *qp;
 	int				ret;
 	struct mlx5_context	       *ctx = to_mctx(context);
 	struct ibv_qp		       *ibqp;
 	uint32_t			usr_idx = 0;
+	uint32_t			uuar_index = 0;
 #ifdef MLX5_DEBUG
 	FILE *fp = ctx->dbg_fp;
 #endif
@@ -936,14 +1020,7 @@ struct ibv_qp *create_qp(struct ibv_context *context,
 	ibqp = (struct ibv_qp *)&qp->verbs_qp;
 	qp->ibv_qp = ibqp;
 
-	memset(&cmd, 0, sizeof(cmd));
-
 	qp->wq_sig = qp_sig_enabled();
-	if (qp->wq_sig)
-		cmd.flags |= MLX5_QP_FLAG_SIGNATURE;
-
-	if (use_scatter_to_cqe())
-		cmd.flags |= MLX5_QP_FLAG_SCATTER_CQE;
 
 	ret = mlx5_calc_wq_size(ctx, attr, qp);
 	if (ret < 0) {
@@ -990,19 +1067,11 @@ struct ibv_qp *create_qp(struct ibv_context *context,
 	qp->db[MLX5_RCV_DBR] = 0;
 	qp->db[MLX5_SND_DBR] = 0;
 
-	cmd.buf_addr = (uintptr_t) qp->buf.buf;
-	cmd.sq_buf_addr = (attr->qp_type == IBV_QPT_RAW_PACKET) ?
-			  (uintptr_t) qp->sq_buf.buf : 0;
-	cmd.db_addr  = (uintptr_t) qp->db;
-	cmd.sq_wqe_count = qp->sq.wqe_cnt;
-	cmd.rq_wqe_count = qp->rq.wqe_cnt;
-	cmd.rq_wqe_shift = qp->rq.wqe_shift;
-
 	if (ctx->atomic_cap == IBV_ATOMIC_HCA)
 		qp->atomics_enabled = 1;
 
 	if (!ctx->cqe_version) {
-		cmd.uidx = 0xffffff;
+		usr_idx = 0xffffff;
 		pthread_mutex_lock(&ctx->qp_table_mutex);
 	} else if (!is_xrc_tgt(attr->qp_type)) {
 		usr_idx = mlx5_store_uidx(ctx, qp);
@@ -1010,13 +1079,9 @@ struct ibv_qp *create_qp(struct ibv_context *context,
 			mlx5_dbg(fp, MLX5_DBG_QP, "Couldn't find free user index\n");
 			goto err_rq_db;
 		}
-
-		cmd.uidx = usr_idx;
 	}
 
-	ret = ibv_cmd_create_qp_ex(context, &qp->verbs_qp, sizeof(qp->verbs_qp),
-				   attr, &cmd.ibv_cmd, sizeof(cmd),
-				   &resp.ibv_resp, sizeof(resp));
+	ret = qp_cmd(context, qp, attr, &uuar_index, usr_idx);
 	if (ret) {
 		mlx5_dbg(fp, MLX5_DBG_QP, "ret %d\n", ret);
 		goto err_free_uidx;
@@ -1034,7 +1099,7 @@ struct ibv_qp *create_qp(struct ibv_context *context,
 		pthread_mutex_unlock(&ctx->qp_table_mutex);
 	}
 
-	map_uuar(context, qp, resp.uuar_index);
+	map_uuar(context, qp, uuar_index);
 
 	qp->rq.max_post = qp->rq.wqe_cnt;
 	if (attr->sq_sig_all)

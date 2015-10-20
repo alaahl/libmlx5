@@ -141,6 +141,24 @@ struct mlx5_create_qp_resp {
 	__u32				uuar_index;
 };
 
+struct mlx5_create_qp_ex {
+	struct ibv_create_qp_ex		ibv_cmd;
+	__u64				buf_addr;
+	__u64				db_addr;
+	__u32				sq_wqe_count;
+	__u32				rq_wqe_count;
+	__u32				rq_wqe_shift;
+	__u32				flags;
+	__u32                           uidx;
+	__u32                           reserved;
+};
+
+struct mlx5_create_qp_resp_ex {
+	struct ibv_create_qp_resp_ex	ibv_resp;
+	__u32				uuar_index;
+	__u32				reserved;
+};
+
 struct mlx5_resize_cq {
 	struct ibv_resize_cq		ibv_cmd;
 	__u64				buf_addr;
