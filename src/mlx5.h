@@ -224,6 +224,10 @@ enum {
 	MLX5_OPCODE_LOCAL_INVAL		= 0x1b,
 	MLX5_OPCODE_CONFIG_CMD		= 0x1f,
 
+	MLX5_OPCODE_SEND_ENABLE         = 0x17,
+	MLX5_OPCODE_RECV_ENABLE         = 0x16,
+	MLX5_OPCODE_CQE_WAIT            = 0x0f,
+
 	MLX5_RECV_OPCODE_RDMA_WRITE_IMM	= 0x00,
 	MLX5_RECV_OPCODE_SEND		= 0x01,
 	MLX5_RECV_OPCODE_SEND_IMM	= 0x02,
@@ -405,6 +409,8 @@ struct mlx5_cq {
 	uint64_t			stall_last_count;
 	int				stall_adaptive_enable;
 	int				stall_cycles;
+	uint32_t			wait_index;
+	uint32_t			wait_count;
 };
 
 struct mlx5_srq {
@@ -442,6 +448,8 @@ struct mlx5_wq {
 	int				wqe_shift;
 	int				offset;
 	void			       *qend;
+	uint32_t			head_en_index;
+	uint32_t			head_en_count;
 };
 
 struct mlx5_bf {
@@ -480,6 +488,7 @@ struct mlx5_qp {
 	int                             wq_sig;
 	uint32_t			qp_cap_cache;
 	int				atomics_enabled;
+	uint32_t			create_flags;
 };
 
 struct mlx5_av {

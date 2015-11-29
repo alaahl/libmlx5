@@ -212,5 +212,10 @@ struct mlx5_wqe_inline_seg {
 	uint32_t	byte_count;
 };
 
+struct mlx5_wqe_wait_en_seg {
+	uint8_t		rsvd0[8];
+	uint32_t	pi;
+	uint32_t	obj_num;
+};
 
 #endif /* WQE_H */

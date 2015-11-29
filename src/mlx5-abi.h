@@ -104,6 +104,20 @@ struct mlx5_create_cq_resp {
 	__u32				cqn;
 };
 
+struct mlx5_create_cq_ex {
+	struct ibv_create_cq_ex		ibv_cmd;
+	__u64				buf_addr;
+	__u64				db_addr;
+	__u32				cqe_size;
+	__u32				comp_mask;
+};
+
+struct mlx5_create_cq_resp_ex {
+	struct ibv_create_cq_resp_ex	ibv_resp;
+	__u32				cqn;
+	__u32				comp_mask;
+};
+
 struct mlx5_create_srq {
 	struct ibv_create_srq		ibv_cmd;
 	__u64				buf_addr;

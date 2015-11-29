@@ -291,17 +291,26 @@ enum {
 };
 
 enum {
-	CREATE_CQ_SUPPORTED_FLAGS = IBV_CREATE_CQ_ATTR_COMPLETION_TIMESTAMP
+	CREATE_CQ_SUPPORTED_FLAGS = IBV_CREATE_CQ_ATTR_COMPLETION_TIMESTAMP |
+		IBV_CREATE_CQ_ATTR_IGNORE_OVERRUN
+};
+
+enum mlx5_cmd_type {
+	MLX5_LEGACY_CMD,
+	MLX5_EXTENDED_CMD
 };
 
 static struct ibv_cq *create_cq(struct ibv_context *context,
-				const struct ibv_cq_init_attr_ex *cq_attr)
+				struct ibv_cq_init_attr_ex *cq_attr,
+				enum mlx5_cmd_type ctype)
 {
 	struct mlx5_create_cq		cmd;
+	struct mlx5_create_cq_ex	cmd_ex;
 	struct mlx5_create_cq_resp	resp;
+	struct mlx5_create_cq_resp_ex	resp_ex;
 	struct mlx5_cq		       *cq;
 	int				cqe_sz;
-	int				ret;
+	int				ret = -1;
 	int				ncqe;
 #ifdef MLX5_DEBUG
 	FILE *fp = to_mctx(context)->dbg_fp;
@@ -340,8 +349,10 @@ static struct ibv_cq *create_cq(struct ibv_context *context,
 		return NULL;
 	}
 
-	memset(&cmd, 0, sizeof cmd);
 	cq->cons_index = 0;
+	/* Cross-channel wait index should start from value below 0 */
+	cq->wait_index = (uint32_t)(-1);
+	cq->wait_count = 0;
 
 	if (mlx5_spinlock_init(&cq->lock))
 		goto err;
@@ -383,22 +394,41 @@ static struct ibv_cq *create_cq(struct ibv_context *context,
 	cq->arm_sn			= 0;
 	cq->cqe_sz			= cqe_sz;
 
-	cmd.buf_addr = (uintptr_t) cq->buf_a.buf;
-	cmd.db_addr  = (uintptr_t) cq->dbrec;
-	cmd.cqe_size = cqe_sz;
+	if (ctype == MLX5_LEGACY_CMD) {
+		memset(&cmd, 0, sizeof(cmd));
+		cmd.buf_addr = (uintptr_t) cq->buf_a.buf;
+		cmd.db_addr  = (uintptr_t) cq->dbrec;
+		cmd.cqe_size = cqe_sz;
 
-	ret = ibv_cmd_create_cq(context, ncqe - 1, cq_attr->channel,
-				cq_attr->comp_vector,
-				&cq->ibv_cq, &cmd.ibv_cmd, sizeof cmd,
-				&resp.ibv_resp, sizeof resp);
+		ret = ibv_cmd_create_cq(context, ncqe - 1, cq_attr->channel,
+					cq_attr->comp_vector,
+					&cq->ibv_cq, &cmd.ibv_cmd, sizeof cmd,
+					&resp.ibv_resp, sizeof resp);
+		cq->cqn = resp.cqn;
+
+	}
+	else if (ctype == MLX5_EXTENDED_CMD) {
+		memset(&cmd_ex, 0, sizeof(cmd_ex));
+		cmd_ex.buf_addr = (uintptr_t) cq->buf_a.buf;
+		cmd_ex.db_addr  = (uintptr_t) cq->dbrec;
+		cmd_ex.cqe_size = cqe_sz;
+
+		ret = ibv_cmd_create_cq_ex(context, cq_attr,
+					&cq->ibv_cq, &cmd_ex.ibv_cmd,
+					sizeof(cmd_ex.ibv_cmd), sizeof(cmd_ex),
+					&resp_ex.ibv_resp,
+					sizeof(resp_ex.ibv_resp), sizeof(resp_ex));
+		cq->cqn = resp_ex.cqn;
+	}
+
 	if (ret) {
-		mlx5_dbg(fp, MLX5_DBG_CQ, "ret %d\n", ret);
+		mlx5_dbg(fp, MLX5_DBG_CQ, "ret %d, ctype = %d\n", ret, ctype);
 		goto err_db;
 	}
 
 	cq->active_buf = &cq->buf_a;
 	cq->resize_buf = NULL;
-	cq->cqn = resp.cqn;
+
 	cq->stall_enable = to_mctx(context)->stall_enable;
 	cq->stall_adaptive_enable = to_mctx(context)->stall_adaptive_enable;
 	cq->stall_cycles = to_mctx(context)->stall_cycles;
@@ -433,13 +463,13 @@ struct ibv_cq *mlx5_create_cq(struct ibv_context *context, int cqe,
 						.comp_vector = comp_vector,
 						.wc_flags = IBV_WC_STANDARD_FLAGS};
 
-	return create_cq(context, &cq_attr);
+	return create_cq(context, &cq_attr, MLX5_LEGACY_CMD);
 }
 
 struct ibv_cq *mlx5_create_cq_ex(struct ibv_context *context,
 				 struct ibv_cq_init_attr_ex *cq_attr)
 {
-	return create_cq(context, cq_attr);
+	return create_cq(context, cq_attr, MLX5_EXTENDED_CMD);
 }
 
 int mlx5_resize_cq(struct ibv_cq *ibcq, int cqe)
@@ -1018,6 +1048,17 @@ static int init_attr_v2(struct ibv_context *context, struct mlx5_qp *qp,
 	struct mlx5_create_qp_ex	cmd;
 	struct mlx5_create_qp_resp_ex	resp;
 	int err;
+
+	qp->create_flags = (attr->create_flags & (IBV_QP_CREATE_IGNORE_SQ_OVERFLOW |
+						  IBV_QP_CREATE_IGNORE_RQ_OVERFLOW |
+						  IBV_QP_CREATE_CROSS_CHANNEL |
+						  IBV_QP_CREATE_MANAGED_SEND |
+						  IBV_QP_CREATE_MANAGED_RECV ));
+	/*
+	 * These QP flags are virtual and don't need to
+	 * be forwarded to the bottom layer.
+	 */
+	attr->create_flags &= ~(IBV_QP_CREATE_IGNORE_SQ_OVERFLOW | IBV_QP_CREATE_IGNORE_RQ_OVERFLOW);
 
 	memset(&cmd, 0, sizeof(cmd));
 	memset(&resp, 0, sizeof(resp));

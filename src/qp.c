@@ -56,7 +56,19 @@ static const uint32_t mlx5_ib_opcode[] = {
 	[IBV_WR_RDMA_READ]		= MLX5_OPCODE_RDMA_READ,
 	[IBV_WR_ATOMIC_CMP_AND_SWP]	= MLX5_OPCODE_ATOMIC_CS,
 	[IBV_WR_ATOMIC_FETCH_AND_ADD]	= MLX5_OPCODE_ATOMIC_FA,
+	[IBV_WR_SEND_ENABLE]		= MLX5_OPCODE_SEND_ENABLE,
+	[IBV_WR_RECV_ENABLE]		= MLX5_OPCODE_RECV_ENABLE,
+	[IBV_WR_CQE_WAIT]		= MLX5_OPCODE_CQE_WAIT
 };
+
+static inline void set_wait_en_seg(void *wqe_seg, uint32_t obj_num, uint32_t count)
+{
+	struct mlx5_wqe_wait_en_seg *seg = (struct mlx5_wqe_wait_en_seg *)wqe_seg;
+
+	seg->pi      = htonl(count);
+	seg->obj_num = htonl(obj_num);
+	return;
+}
 
 static void *get_recv_wqe(struct mlx5_qp *qp, int n)
 {
@@ -157,6 +169,10 @@ void mlx5_init_qp_indices(struct mlx5_qp *qp)
 	qp->rq.head	 = 0;
 	qp->rq.tail	 = 0;
 	qp->sq.cur_post  = 0;
+	qp->sq.head_en_index = 0;
+	qp->sq.head_en_count = 0;
+	qp->rq.head_en_index = 0;
+	qp->rq.head_en_count = 0;
 }
 
 static int mlx5_wq_overflow(struct mlx5_wq *wq, int nreq, struct mlx5_cq *cq)
@@ -421,6 +437,11 @@ int mlx5_post_send(struct ibv_qp *ibqp, struct ibv_send_wr *wr,
 	void *qend = qp->sq.qend;
 	uint32_t mlx5_opcode;
 	struct mlx5_wqe_xrc_seg *xrc;
+	struct mlx5_cq *wait_cq;
+	uint32_t wait_index = 0;
+	unsigned head_en_index;
+	struct mlx5_wq *wq;
+
 #ifdef MLX5_DEBUG
 	FILE *fp = to_mctx(ibqp->context)->dbg_fp;
 #endif
@@ -437,11 +458,10 @@ int mlx5_post_send(struct ibv_qp *ibqp, struct ibv_send_wr *wr,
 			goto out;
 		}
 
-		if (unlikely(mlx5_wq_overflow(&qp->sq, nreq,
+		if (unlikely(!(qp->create_flags & IBV_QP_CREATE_IGNORE_SQ_OVERFLOW) && mlx5_wq_overflow(&qp->sq, nreq,
 					      to_mcq(qp->ibv_qp->send_cq)))) {
 			mlx5_dbg(fp, MLX5_DBG_QP_SEND, "work queue overflow\n");
-			errno = ENOMEM;
-			err = -1;
+			err = ENOMEM;
 			*bad_wr = wr;
 			goto out;
 		}
@@ -507,6 +527,69 @@ int mlx5_post_send(struct ibv_qp *ibqp, struct ibv_send_wr *wr,
 
 				size += (sizeof(struct mlx5_wqe_raddr_seg) +
 				sizeof(struct mlx5_wqe_atomic_seg)) / 16;
+				break;
+			case IBV_WR_CQE_WAIT:
+				if (!(qp->create_flags & IBV_QP_CREATE_CROSS_CHANNEL)) {
+					err = EINVAL;
+					*bad_wr = wr;
+					goto out;
+				}
+
+				wait_cq = to_mcq(wr->wr.cqe_wait.cq);
+				wait_index = wait_cq->wait_index + wr->wr.cqe_wait.cq_count;
+				wait_cq->wait_count = max(wait_cq->wait_count, wr->wr.cqe_wait.cq_count);
+				if (wr->send_flags & IBV_SEND_WAIT_EN_LAST) {
+					wait_cq->wait_index += wait_cq->wait_count;
+					wait_cq->wait_count = 0;
+				}
+				set_wait_en_seg(seg, wait_cq->cqn, wait_index);
+				seg += sizeof(struct mlx5_wqe_wait_en_seg);
+				size += sizeof(struct mlx5_wqe_wait_en_seg) / 16;
+				break;
+
+			case IBV_WR_SEND_ENABLE:
+			case IBV_WR_RECV_ENABLE:
+				if (((wr->opcode == IBV_WR_SEND_ENABLE) &&
+					!(to_mqp(wr->wr.wqe_enable.qp)->create_flags &
+							IBV_QP_CREATE_MANAGED_SEND)) ||
+					((wr->opcode == IBV_WR_RECV_ENABLE) &&
+					!(to_mqp(wr->wr.wqe_enable.qp)->create_flags &
+							IBV_QP_CREATE_MANAGED_RECV))) {
+					err = EINVAL;
+					*bad_wr = wr;
+					goto out;
+				}
+
+				wq = (wr->opcode == IBV_WR_SEND_ENABLE) ?
+					&to_mqp(wr->wr.wqe_enable.qp)->sq :
+					&to_mqp(wr->wr.wqe_enable.qp)->rq;
+
+				/* If wqe_count is 0 release all WRs from queue */
+				if (wr->wr.wqe_enable.wqe_count) {
+					head_en_index = wq->head_en_index +
+								wr->wr.wqe_enable.wqe_count;
+					wq->head_en_count = max(wq->head_en_count,
+								wr->wr.wqe_enable.wqe_count);
+
+					if ((int)(wq->head - head_en_index) < 0) {
+						err = EINVAL;
+						*bad_wr = wr;
+						goto out;
+					}
+				} else {
+					head_en_index = wq->head;
+					wq->head_en_count = wq->head - wq->head_en_index;
+				}
+
+				if (wr->send_flags & IBV_SEND_WAIT_EN_LAST) {
+					wq->head_en_index += wq->head_en_count;
+					wq->head_en_count = 0;
+				}
+
+				set_wait_en_seg(seg, wr->wr.wqe_enable.qp->qp_num, head_en_index);
+
+				seg += sizeof(struct mlx5_wqe_wait_en_seg);
+				size += sizeof(struct mlx5_wqe_wait_en_seg) / 16;
 				break;
 
 			default:
@@ -626,6 +709,11 @@ out:
 	if (likely(nreq)) {
 		qp->sq.head += nreq;
 
+		if (qp->create_flags & IBV_QP_CREATE_MANAGED_SEND) {
+			wmb();
+			goto post_send_no_db;
+		}
+
 		/*
 		 * Make sure that descriptors are written before
 		 * updating doorbell record and ringing the doorbell
@@ -662,6 +750,7 @@ out:
 			mlx5_spin_unlock(&bf->lock);
 	}
 
+post_send_no_db:
 	mlx5_spin_unlock(&qp->sq.lock);
 
 	return err;
@@ -695,11 +784,11 @@ int mlx5_post_recv(struct ibv_qp *ibqp, struct ibv_recv_wr *wr,
 	ind = qp->rq.head & (qp->rq.wqe_cnt - 1);
 
 	for (nreq = 0; wr; ++nreq, wr = wr->next) {
-		if (unlikely(mlx5_wq_overflow(&qp->rq, nreq,
+		if (unlikely(!(qp->create_flags & IBV_QP_CREATE_IGNORE_RQ_OVERFLOW) &&
+				mlx5_wq_overflow(&qp->rq, nreq,
 					      to_mcq(qp->ibv_qp->recv_cq)))) {
-			errno = ENOMEM;
+			err = ENOMEM;
 			*bad_wr = wr;
-			err = -1;
 			goto out;
 		}
 
